@@ -187,10 +187,13 @@ def _load_data_from_source(source):
     #TODO: mock url and file opening to assert this?
     '''
     assert source
-    if isinstance(source, dict):
+    if isinstance(source, dict) or (hasattr(source, 'keys') and hasattr(source, '__getitem__')):
         return source
     def is_url(source):
-        return urllib.parse.urlparse(source).scheme != ''
+        try:
+            return urllib.parse.urlparse(source).scheme != ''
+        except Exception:
+            return False
     if isinstance(source, str) and source.startswith('{') and source.endswith('}'):
         return json.loads(source)
     ext = 'unknown'

@@ -3,3 +3,5 @@ __cache__
 .cache
 .DS_Store
 .vscode
+
+*.egg-info
