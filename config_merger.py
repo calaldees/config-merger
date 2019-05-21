@@ -50,7 +50,7 @@ def _postmortem(func, *args, **kwargs):
 
 # Core Merging -----------------------------------------------------------------
 
-def update_dict_subkeys(d, u):
+def update_dict_subkeys(d, u, none_values_are_transparent=False, **options):
     """
     Merge two dicts, ensuring subkeys are respected
     (rather than .update, that just tumps the top dictionary)
@@ -66,23 +66,30 @@ def update_dict_subkeys(d, u):
     {'a': 1, 'b': [2], 'c': {'d': 999, 'e': 5, 'f': {'g': 7}}, 'h': 8}
     >>> update_dict_subkeys(data, {'b': [777, {'i': 9}]})
     {'a': 1, 'b': [2, 777, {'i': 9}], 'c': {'d': 999, 'e': 5, 'f': {'g': 7}}, 'h': 8}
+    >>> update_dict_subkeys({'a': 1}, {'a': None})
+    {'a': None}
+    >>> update_dict_subkeys({'a': 1}, {'a': None}, none_values_are_transparent=True)
+    {'a': 1}
     """
     for k, v in u.items():
-        if isinstance(v, collections.Mapping):
+        if isinstance(v, collections.abc.Mapping):
             # Recursively merge subdicts
             r = update_dict_subkeys(d.get(k, {}), v)
             d[k] = r
-        elif isinstance(v, collections.Iterable) and not isinstance(v, str):
+        elif isinstance(v, collections.abc.Iterable) and not isinstance(v, str):
             # Join lists
             dk = d.setdefault(k, [])
             dk += v
         else:
+            # Option: skip `None` values
+            if none_values_are_transparent and k in d and u[k] == None:
+                continue
             # Overwrite or create key
             d[k] = u[k]
     return d
 
 
-def replace_template_variables(data, flat_parent_replacements={}):
+def replace_template_variables(data, flat_parent_replacements={}, **options):
     """
     >>> replace_template_variables({'a': 'XtestX', 'b': 'template ${a}'})
     {'a': 'XtestX', 'b': 'template XtestX'}
@@ -100,9 +107,9 @@ def replace_template_variables(data, flat_parent_replacements={}):
     for k, v in data.items():
         if isinstance(v, str):
             data[k] = _replace_template(v)
-        elif isinstance(v, collections.Mapping):
+        elif isinstance(v, collections.abc.Mapping):
             replace_template_variables(v, data_chain)
-        elif isinstance(v, collections.Iterable) and not isinstance(v, str):
+        elif isinstance(v, collections.abc.Iterable) and not isinstance(v, str):
             v[:] = list(map(lambda i: _replace_template(i), v))
         #else:
         #    raise Exception('unknown type')
@@ -187,7 +194,11 @@ def _load_data_from_source(source):
     #TODO: mock url and file opening to assert this?
     '''
     assert source
-    if isinstance(source, dict) or (hasattr(source, 'keys') and hasattr(source, '__getitem__')):
+    #if not isinstance(source, dict) and isinstance(source, collections.abc.Mapping):
+    #    # TODO: Convert to hard dict
+    #    raise Exception()
+    #if isinstance(source, dict) or (hasattr(source, 'keys') and hasattr(source, '__getitem__')):
+    if isinstance(source, collections.abc.Mapping):
         return source
     def is_url(source):
         try:
@@ -224,15 +235,15 @@ def _load_data_from_source(source):
 
 # Top Level Data Processing ---------------------------------------------------
 
-def _reduce_data_sources(*sources):
+def _reduce_data_sources(*sources, **options):
     return reduce(
-        lambda acc, source: update_dict_subkeys(acc, _load_data_from_source(source)),
+        lambda acc, source: update_dict_subkeys(acc, _load_data_from_source(source), **options),
         sources,
         {},
     )
 
-def _format_output(sources, format=DEFAULT_OUTPUT_FORMAT, **args):
-    return OUTPUT_FORMATS[format](merge(*sources))
+def _format_output(sources, format=DEFAULT_OUTPUT_FORMAT, **options):
+    return OUTPUT_FORMATS[format](merge(*sources, **options))
 
 
 # Folder Tree Merging Operations -----------------------------------------------
@@ -288,15 +299,17 @@ class VariableOverlay():
 
 # Public Python API -----------------------------------------------------------
 
-def merge(*sources):
+def merge(*sources, **options):
     '''
     >>> merge(
     ...     '{"a": 1, "b": [2], "c": {"d": "a is ${a}"}}',
     ...     {'a': 5, 'b': [999]},
     ... )
     {'a': 5, 'b': [2, 999], 'c': {'d': 'a is 5'}}
+    >>> merge({'a': 1}, {'a': None}, none_values_are_transparent=True, another_option='TEST')
+    {'a': 1}
     '''
-    return replace_template_variables(_reduce_data_sources(*sources))
+    return replace_template_variables(_reduce_data_sources(*sources, **options), **options)
 
 
 # Command Line ----------------------------------------------------------------
@@ -320,6 +333,8 @@ def get_args():
 
     parser.add_argument('--format', action='store', choices=OUTPUT_FORMATS.keys(), help='output format', default=DEFAULT_OUTPUT_FORMAT)
     parser.add_argument('--python_path', action='append', help='paths', default=[])
+
+    parser.add_argument('--none_values_are_transparent', action='store_true', help='Empty/Null/None values will not override set values', default=False)
 
     parser.add_argument('-v', '--verbose', action='store_true', help='', default=False)
     parser.add_argument('--postmortem', action='store_true', help='Automatically drop into pdb shell on exception. Used for debuging')
