@@ -153,7 +153,7 @@ def parse_env(filehandle):
 INPUT_FORMATS = {
     'py': parse_py,
     'json': json.load,
-    'yaml': yaml.load,
+    'yaml': yaml.safe_load,
     'env': parse_env,
 }
 
