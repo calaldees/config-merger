@@ -32,7 +32,16 @@ TEMPLATE_REPLACEMENT = '${%s}'
 
 DEFAULT_OUTPUT_FORMAT = 'pformat'
 
-
+DEFAULT_METADATA_KEY = '__CONFIG-MERGER-META__'
+META_funcs = {
+    'combine': {
+        'concat': lambda a, b: a + b,
+        'keep': lambda a, b: a,
+        'replace': lambda a, b: b,
+        'and': lambda a, b: set(a) & set(b),
+        'or': lambda a, b: set(a) | set(b),
+    },
+}
 
 # Utils ------------------------------------------------------------------------
 
@@ -66,20 +75,38 @@ def update_dict_subkeys(d, u, none_values_are_transparent=False, **options):
     {'a': 1, 'b': [2], 'c': {'d': 999, 'e': 5, 'f': {'g': 7}}, 'h': 8}
     >>> update_dict_subkeys(data, {'b': [777, {'i': 9}]})
     {'a': 1, 'b': [2, 777, {'i': 9}], 'c': {'d': 999, 'e': 5, 'f': {'g': 7}}, 'h': 8}
+
     >>> update_dict_subkeys({'a': 1}, {'a': None})
     {'a': None}
     >>> update_dict_subkeys({'a': 1}, {'a': None}, none_values_are_transparent=True)
     {'a': 1}
+
+    >>> update_dict_subkeys({'a': [1, 2, 3]}, {'a': [3, 4, 5], '__CONFIG-MERGER-META__': {'a': 'and'}})
+    {'a': {3}}
+    >>> update_dict_subkeys({'a': [1, 2, 3]}, {'a': [3, 4, 5], '__CONFIG-MERGER-META__': {'b': 'and'}})
+    {'a': [1, 2, 3, 3, 4, 5]}
+    >>> update_dict_subkeys({'a': [1, 2, 3]}, {'a': [3, 4, 5], '__CONFIG-MERGER-META__': {'a': 'keep'}})
+    {'a': [1, 2, 3]}
+    >>> update_dict_subkeys({'a': [1, 2, 3]}, {'a': [3, 4, 5], '__CONFIG-MERGER-META__': {'a': 'replace'}})
+    {'a': [3, 4, 5]}
+
+
     """
+    metadata_key = options.get('metadata_key', DEFAULT_METADATA_KEY)
+    meta = {
+        # TODO: .pop() is probably a mistake long term - we should have a REMOVE-META sweep at the end
+        **d.pop(metadata_key, {}),
+        **u.pop(metadata_key, {}),
+    }
+
     for k, v in u.items():
         if isinstance(v, collections.abc.Mapping):
+            # TODO: meta[replace]
             # Recursively merge subdicts
-            r = update_dict_subkeys(d.get(k, {}), v)
-            d[k] = r
+            d[k] = update_dict_subkeys(d.get(k, {}), v, **options)
         elif isinstance(v, collections.abc.Iterable) and not isinstance(v, str):
-            # Join lists
-            dk = d.setdefault(k, [])
-            dk += v
+            # Combine lists
+            d[k] = META_funcs['combine'][meta.get(k, 'concat')](d.get(k, []), v)
         else:
             # Option: skip `None` values
             if none_values_are_transparent and k in d and u[k] == None:
@@ -335,6 +362,7 @@ def get_args():
     parser.add_argument('--python_path', action='append', help='paths', default=[])
 
     parser.add_argument('--none_values_are_transparent', action='store_true', help='Empty/Null/None values will not override set values', default=False)
+    parser.add_argument('--metadata_key', action='store', help='', default=DEFAULT_METADATA_KEY)
 
     parser.add_argument('-v', '--verbose', action='store_true', help='', default=False)
     parser.add_argument('--postmortem', action='store_true', help='Automatically drop into pdb shell on exception. Used for debuging')

@@ -82,7 +82,10 @@ Example Usecases
 TODO
 ----
 
-* Lists are `append`ed to in all cases. We may want to include data files with a `__CONFIG-MERGER-META__` key that has directions to describe `append`, `replace` or `in_both` behaviour.
+* More MERGE-META
+    * Implement merge modes for dicts
+    * Allow meta to propergate to child dicts (will need copy behaviour of options)
 * Other formats could be supported (`xml`?)
 * Outputting as a `py` file could be useful (we would have to construct this as a string manually)
 * Allow `merge(open('filename.json'))`. We currently don't support this as we have no way of knowing the file format to parse the data in the file.
+* input from pipe?
